@@ -6,6 +6,7 @@ from telegram import Bot
 import schedule
 import time
 from datetime import datetime
+import pytz
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -21,7 +22,8 @@ sent_signals = set()
 # ------------------------
 
 def market_open():
-    now = datetime.now()
+    india = pytz.timezone('Asia/Kolkata')
+    now = datetime.now(india)
     return now.weekday() < 5 and 9 <= now.hour < 15
 
 
@@ -139,6 +141,7 @@ print("🔥 TESTING BOT RUNNING...")
 while True:
     schedule.run_pending()
     time.sleep(1)
+
 
 
 

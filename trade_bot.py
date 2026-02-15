@@ -6,7 +6,7 @@ from telegram import Bot
 import schedule
 import time
 from datetime import datetime
-import pytz
+from datetime import datetime, timedelta
 import os
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -22,9 +22,25 @@ sent_signals = set()
 # ------------------------
 
 def market_open():
-    india = pytz.timezone('Asia/Kolkata')
-    now = datetime.now(india)
-    return now.weekday() < 5 and 9 <= now.hour < 15
+    try:
+        # Convert UTC to IST (+5:30)
+        india_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
+
+        # Monday–Friday
+        is_weekday = india_time.weekday() < 5
+
+        # Between 9:15 AM and 3:30 PM
+        is_market_hours = (
+            (india_time.hour > 9 or (india_time.hour == 9 and india_time.minute >= 15)) and
+            (india_time.hour < 15 or (india_time.hour == 15 and india_time.minute <= 30))
+        )
+
+        return is_weekday and is_market_hours
+
+    except Exception as e:
+        print("Market time error:", e)
+        return False
+
 
 
 # ------------------------
@@ -141,6 +157,7 @@ print("🔥 TESTING BOT RUNNING...")
 while True:
     schedule.run_pending()
     time.sleep(1)
+
 
 
 

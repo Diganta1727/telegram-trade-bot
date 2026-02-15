@@ -8,6 +8,9 @@ import time
 from datetime import datetime
 from datetime import datetime, timedelta
 import os
+from flask import Flask
+import threading
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -150,14 +153,29 @@ async def scan_market():
 def run_bot():
     asyncio.run(scan_market())
 
-schedule.every(15).minutes.do(run_bot)
+app = Flask(__name__)
 
-print("🔥 TESTING BOT RUNNING...")
+@app.route("/")
+def home():
+    return "Trading Bot Running 🚀"
 
-while True:
-    print("Bot alive heartbeat...")
-    schedule.run_pending()
-    time.sleep(60)
+def start_scheduler():
+    schedule.every(15).minutes.do(run_bot)
+
+    while True:
+        print("Bot alive heartbeat...")
+        schedule.run_pending()
+        time.sleep(60)
+
+if __name__ == "__main__":
+    # Run scheduler in background thread
+    thread = threading.Thread(target=start_scheduler)
+    thread.start()
+
+    # Run Flask server (Keeps Railway alive)
+    app.run(host="0.0.0.0", port=8000)
+
+
 
 
 

@@ -4,5 +4,6 @@ numpy
 yfinance
 ta
 schedule
-pytz
+
+
 

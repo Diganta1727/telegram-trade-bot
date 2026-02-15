@@ -15,7 +15,12 @@ CHAT_ID = os.getenv("CHAT_ID")
 bot = Bot(token=TOKEN)
 
 # TEST MESSAGE
-bot.send_message(chat_id=CHAT_ID, text="Bot is alive and running 🚀")
+import asyncio
+
+async def test_message():
+    await bot.send_message(chat_id=CHAT_ID, text="Bot is alive and running 🚀")
+
+asyncio.run(test_message())
 
 sent_signals = set()
 
@@ -142,4 +147,5 @@ print("🔥 TESTING BOT RUNNING...")
 while True:
     schedule.run_pending()
     time.sleep(1)
+
 

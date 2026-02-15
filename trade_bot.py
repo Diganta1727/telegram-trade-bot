@@ -155,8 +155,9 @@ schedule.every(15).minutes.do(run_bot)
 print("🔥 TESTING BOT RUNNING...")
 
 while True:
+    print("Bot alive heartbeat...")
     schedule.run_pending()
-    time.sleep(1)
+    time.sleep(60)
 
 
 

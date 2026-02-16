@@ -28,6 +28,7 @@ def market_open():
     try:
         # Convert UTC to IST (+5:30)
         india_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
 
         # Monday–Friday
         is_weekday = india_time.weekday() < 5
@@ -174,6 +175,7 @@ if __name__ == "__main__":
 
     # Run Flask server (Keeps Railway alive)
     app.run(host="0.0.0.0", port=8000)
+
 
 
 

@@ -168,6 +168,8 @@ async def scan_market():
                     continue
 
             await send_message(signal)
+
+            # ✅ store only when message is sent
             sent_signals[symbol] = now
 
 
@@ -200,3 +202,4 @@ if __name__ == "__main__":
     thread.start()
 
     app.run(host="0.0.0.0", port=8000)
+

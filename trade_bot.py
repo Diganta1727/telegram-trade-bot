@@ -3,37 +3,33 @@ import pandas as pd
 import ta
 import asyncio
 from telegram import Bot
-import schedule
-import time
-from datetime import datetime
 from datetime import datetime, timedelta
 import os
 from flask import Flask
 import threading
+import time
 
-
+# ------------------------
+# TELEGRAM CONFIG
+# ------------------------
 TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
+USER_CHAT_ID = os.getenv("USER_CHAT_ID")   # Your personal chat id
+GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID") # Your group chat id
 
 bot = Bot(token=TOKEN)
 
-sent_signals = set()
+sent_signals = {}  # store last sent time for each symbol
+
 
 # ------------------------
 # MARKET HOURS FILTER
 # ------------------------
-
 def market_open():
     try:
-        # Convert UTC to IST (+5:30)
         india_time = datetime.utcnow() + timedelta(hours=5, minutes=30)
-        data.columns = [col[0] if isinstance(col, tuple) else col for col in data.columns]
 
-        # Monday–Friday
         is_weekday = india_time.weekday() < 5
 
-        # Between 9:15 AM and 3:30 PM
         is_market_hours = (
             (india_time.hour > 9 or (india_time.hour == 9 and india_time.minute >= 15)) and
             (india_time.hour < 15 or (india_time.hour == 15 and india_time.minute <= 30))
@@ -46,42 +42,51 @@ def market_open():
         return False
 
 
-
 # ------------------------
 # ADVANCED STRATEGY
 # ------------------------
-
 def advanced_signal(symbol):
-    data = yf.download(symbol, period="1mo", interval="15m")
+    try:
+        data = yf.download(symbol, period="1mo", interval="15m", auto_adjust=True)
 
-    if len(data) < 100:
-        return None
+        if data is None or len(data) < 100:
+            return None
 
-    data['ema20'] = ta.trend.ema_indicator(data['Close'], window=20)
-    data['ema50'] = ta.trend.ema_indicator(data['Close'], window=50)
-    data['rsi'] = ta.momentum.rsi(data['Close'], window=14)
-    data['adx'] = ta.trend.adx(data['High'], data['Low'], data['Close'], window=14)
-    data['volume_avg'] = data['Volume'].rolling(20).mean()
-    data['atr'] = ta.volatility.average_true_range(data['High'], data['Low'], data['Close'], window=14)
+        # Fix MultiIndex columns
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
 
-    latest = data.iloc[-1]
+        # Convert to 1D series
+        close = data["Close"].squeeze()
+        high = data["High"].squeeze()
+        low = data["Low"].squeeze()
+        volume = data["Volume"].squeeze()
 
-    volume_breakout = latest['Volume'] > 1.5 * latest['volume_avg']
-    strong_trend = latest['adx'] > 25
+        data["ema20"] = ta.trend.ema_indicator(close, window=20)
+        data["ema50"] = ta.trend.ema_indicator(close, window=50)
+        data["rsi"] = ta.momentum.rsi(close, window=14)
+        data["adx"] = ta.trend.adx(high, low, close, window=14)
+        data["volume_avg"] = volume.rolling(20).mean()
+        data["atr"] = ta.volatility.average_true_range(high, low, close, window=14)
 
-    price = latest['Close']
-    strike = round(price / 50) * 50
+        latest = data.iloc[-1]
 
-    # Bullish Setup
-    if (latest['ema20'] > latest['ema50'] and
-        latest['rsi'] > 55 and
-        strong_trend and
-        volume_breakout):
+        volume_breakout = latest["Volume"] > 1.5 * latest["volume_avg"]
+        strong_trend = latest["adx"] > 25
 
-        sl = price - latest['atr']
-        target = price + (2 * latest['atr'])
+        price = latest["Close"]
+        strike = round(price / 50) * 50
 
-        return f"""🔥 BUY SIGNAL
+        # BUY SIGNAL
+        if (latest["ema20"] > latest["ema50"] and
+            latest["rsi"] > 55 and
+            strong_trend and
+            volume_breakout):
+
+            sl = price - latest["atr"]
+            target = price + (2 * latest["atr"])
+
+            return f"""🔥 BUY SIGNAL
 Symbol: {symbol}
 Entry: {price:.2f}
 SL: {sl:.2f}
@@ -91,16 +96,16 @@ Target: {target:.2f}
 Trend: Strong
 """
 
-    # Bearish Setup
-    if (latest['ema20'] < latest['ema50'] and
-        latest['rsi'] < 45 and
-        strong_trend and
-        volume_breakout):
+        # SELL SIGNAL
+        if (latest["ema20"] < latest["ema50"] and
+            latest["rsi"] < 45 and
+            strong_trend and
+            volume_breakout):
 
-        sl = price + latest['atr']
-        target = price - (2 * latest['atr'])
+            sl = price + latest["atr"]
+            target = price - (2 * latest["atr"])
 
-        return f"""🔥 SELL SIGNAL
+            return f"""🔥 SELL SIGNAL
 Symbol: {symbol}
 Entry: {price:.2f}
 SL: {sl:.2f}
@@ -110,24 +115,35 @@ Target: {target:.2f}
 Trend: Strong
 """
 
-    return None
+        return None
+
+    except Exception as e:
+        print("Strategy error:", symbol, e)
+        return None
 
 
 # ------------------------
-# TELEGRAM
+# TELEGRAM MESSAGE
 # ------------------------
-
 async def send_message(message):
-    await bot.send_message(chat_id=CHAT_ID, text=message)
+    try:
+        await bot.send_message(chat_id=USER_CHAT_ID, text=message)
+        await bot.send_message(chat_id=GROUP_CHAT_ID, text=message)
+        print("Message sent successfully!")
+
+    except Exception as e:
+        print("Telegram error:", e)
 
 
 # ------------------------
 # SCAN MARKET
 # ------------------------
-
 async def scan_market():
     if not market_open():
+        print("Market closed, skipping scan...")
         return
+
+    print("Scanning market now...")
 
     symbols = [
         "^NSEI",
@@ -142,44 +158,45 @@ async def scan_market():
     for symbol in symbols:
         signal = advanced_signal(symbol)
 
-        if signal and symbol not in sent_signals:
+        if signal:
+            now = datetime.utcnow()
+
+            # Avoid spamming same symbol again within 1 hour
+            if symbol in sent_signals:
+                last_time = sent_signals[symbol]
+                if (now - last_time).seconds < 3600:
+                    continue
+
             await send_message(signal)
-            sent_signals.add(symbol)
+            sent_signals[symbol] = now
 
 
 # ------------------------
-# RUN LOOP
+# MAIN LOOP (NO SCHEDULE LIBRARY)
 # ------------------------
+def bot_loop():
+    while True:
+        try:
+            asyncio.run(scan_market())
+        except Exception as e:
+            print("Bot loop error:", e)
 
-def run_bot():
-    asyncio.run(scan_market())
+        print("Bot alive heartbeat...")
+        time.sleep(900)  # 900 sec = 15 minutes
 
+
+# ------------------------
+# FLASK APP (KEEP RAILWAY ALIVE)
+# ------------------------
 app = Flask(__name__)
 
 @app.route("/")
 def home():
     return "Trading Bot Running 🚀"
 
-def start_scheduler():
-    schedule.every(15).minutes.do(run_bot)
-
-    while True:
-        print("Bot alive heartbeat...")
-        schedule.run_pending()
-        time.sleep(60)
 
 if __name__ == "__main__":
-    # Run scheduler in background thread
-    thread = threading.Thread(target=start_scheduler)
+    thread = threading.Thread(target=bot_loop, daemon=True)
     thread.start()
 
-    # Run Flask server (Keeps Railway alive)
     app.run(host="0.0.0.0", port=8000)
-
-
-
-
-
-
-
-
